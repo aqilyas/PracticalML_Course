@@ -1,0 +1,125 @@
+---
+title: "PML course project"
+author: "Ilyas Aaqaoui"
+date: "29 janvier 2017"
+output: html_document
+---
+
+#Executive Summary:
+Using some devices makes it possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, the goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways, and use an algorithm for learning from the data to predict how well a new participant executes a mouvement. 
+
+##Part 1: Preparing data
+__loading packages__
+```{r warning=FALSE, message= FALSE}
+library(ggplot2)
+library(caret)
+library(randomForest)
+library(Hmisc)
+```
+```{r echo=FALSE}
+setwd("C:/Users/vPro/Desktop/Tech Shop/Machine Learning/JHU- ML/PML project")
+```
+
+__loading data__
+```{r}
+trurl = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(trurl, destfile = "pml-training.csv")
+testurl = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(testurl, destfile = "pml-testing.csv")
+```
+
+```{r echo= FALSE}
+training_tot = read.csv("pml-training.csv", na.strings = c("NA", ""))
+testing = read.csv("pml-testing.csv", na.strings = c("NA", ""))
+```
+
+This [document](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf) by the Pontifical Catholic University in Rio provides enough information to understand the situation and more importantly to understand the features used in this dataset.
+
+The outcome/predicted variable is a multi (5) class variable.
+
+__Cleaning__
+just like the Wolf of Pulp Fiction :)
+By looking at first at data, we see that it has a lot of NAs, one way to deal with this is to do some data imputation, however, when we count the number of NAs (using: sum(is.na(variable))) we find that almost all observations have missing data (more than 97%), therefore we can only remove those variables:
+
+```{r echo=FALSE}
+train = training_tot[, -c((12:36), (50:59), (69:83), (87:101), (103:112), (125:139), (141:150))]
+```
+and for testing:
+```{r echo=FALSE}
+testing = testing[, -c((12:36), (50:59), (69:83), (87:101), (103:112), (125:139), (141:150))]
+```
+and after some quick plots, we can see that the first seven columns are pretty much useless.
+```{r echo= FALSE}
+train= train[,-(1:7)] 
+testing= testing[,-(1:7)]
+```
+We need now to split the given training set training_tot to training and test. 
+
+The given testing set that has 20 observations will be used for evaluation and grading:
+```{r}
+set.seed(544)
+inTrain <- createDataPartition(train$classe, p=0.70, list=F)
+training <- train[inTrain,]
+test <- train[-inTrain,]
+```
+
+
+##Modelling and Prediction:
+Linear regression will not be a good choice for this dataset, we will use Random Forest in two ways,  then choose the one with that best balances between accuracy on the test set and computation expense.
+
+####First model
+ We will use k-fold cross validation with the train data
+```{r echo= FALSE}
+ctrl <- trainControl(method= "cv")
+RFmod_1 = train(classe~ . , method = "rf", trControl = ctrl, data= training)
+
+```
+this model used 10 fold cross-validation and got a 99% accuracy on the training set and an OOB error rate of 0.64%.
+```{r echo = FALSE}
+RFpredict_1 = predict(RFmod_1, test) 
+```
+
+*Results:* 
+ 
+```{r}
+confusionMatrix(RFpredict_1, test$classe)
+```
+This model gave more than 99% accuracy on the test set. and a small out of sample error:
+```{r}
+1 - as.numeric(confusionMatrix(RFpredict_1, test$classe)$overall[1])
+```
+
+*OOB Error vs number of trees:*
+```{r warning= FALSE}
+plot(RFmod_1$finalModel)
+```
+
+
+
+
+As we can see, around 150 trees the error does not change significantly and it's almost constant. 
+
+Even if this model gave great accuracy and low error, it was a bit computationally expensive, let's try maybe sacrificing some of the accuracy with random forest without k-fold CV and reducing the number of trees to 150:
+
+####2nd Model:
+
+```{r}
+RFmod_2 = randomForest(classe ~ . , data= training)
+```
+```{r}
+RFmod_2$finalModel
+```
+This model has  an OOB error rate of 0.54%, less than the model with k-folds and more trees (0.64%), let's see how it will do on the test set:
+```{r}
+RFpredict_2 = predict(RFmod_2, test)
+confusionMatrix(RFpredict_2, test$classe)
+```
+
+This one has also an accuracy of 99% on the test set.
+
+For practicality reasons I will chose the second model, random forest with 150 trees. 
+
+
+###Prediction on the testing set:
+```{r}
+predict(RFmod_2, testing)
